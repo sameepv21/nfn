@@ -139,7 +139,7 @@ def get_batch_siren(dset_type):
     siren = Siren(**SIREN_kwargs[dset_type])
     func_model, initial_params = make_functional(siren)
     mgrid_len = 28 if dset_type in ["mnist", "fashion"] else 32
-    coords = get_mgrid(mgrid_len, 2).cuda()
+    coords = get_mgrid(mgrid_len, 2)
     img_shape = IMG_shapes[dset_type]
     def func_inp(p):
         values = func_model(p, coords)[0]
@@ -151,7 +151,7 @@ def get_spatial_batch_siren(dset_type):
     siren = Siren(**SIREN_kwargs[dset_type])
     func_model, initial_params = make_functional(siren)
     mgrid_len = 28 if dset_type in ["mnist", "fashion"] else 32
-    coords = get_mgrid(mgrid_len, 2).cuda()
+    coords = get_mgrid(mgrid_len, 2)
     img_shape = IMG_shapes[dset_type]
     def siren_at_coord(params, coord):
         # TODO: this should be batched over all coords that correspond to this param patch.

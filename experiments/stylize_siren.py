@@ -33,8 +33,8 @@ def evaluate(nfnet, loader, batch_siren):
     recon_loss = 0
     tot_examples = 0
     for wts_and_bs, img, _ in loader:
-        params = WeightSpaceFeatures(*wts_and_bs).to("cuda")
-        img = img.cuda()
+        params = WeightSpaceFeatures(*wts_and_bs).to("cpu")
+        img = img
         delta = nfnet(params)
         new_params = params + delta
         func_params = params_to_func_params(new_params)
@@ -71,7 +71,7 @@ def sample(nfnet, loader, batch_siren):
     orig_state = nfnet.training
     nfnet.eval()
     wts_and_bs, true_img, _ = next(iter(loader))
-    params = WeightSpaceFeatures(*wts_and_bs).to("cuda")
+    params = WeightSpaceFeatures(*wts_and_bs).to("cpu")
     orig_outs = batch_siren(params_to_func_params(params))
     orig_outs = unprocess_img_arr(orig_outs.cpu().numpy())
     delta = nfnet(params)
@@ -107,7 +107,7 @@ def main(cfg):
     valloader = DataLoader(valset, batch_size=32, shuffle=False, num_workers=8, drop_last=True)
 
     spec = network_spec_from_wsfeat(WeightSpaceFeatures(*next(iter(trainloader))[0]).to("cpu"), set_all_dims=True)
-    nfnet = hydra.utils.instantiate(cfg.nfnet, spec).cuda()
+    nfnet = hydra.utils.instantiate(cfg.nfnet, spec)
     print(nfnet)
     print(f"Total params in NFN: {sum(p.numel() for p in nfnet.parameters())}.")
 
@@ -118,8 +118,8 @@ def main(cfg):
     outer_pbar = trange(0, cfg.max_steps, position=0)
     for step in outer_pbar:
         wts_and_bs, img, _ = next(train_iter)
-        params = WeightSpaceFeatures(*wts_and_bs).to("cuda")
-        img = img.cuda()
+        params = WeightSpaceFeatures(*wts_and_bs).to("cpu")
+        img = img
         delta = nfnet(params)
         new_params = params + delta
         func_params = params_to_func_params(new_params)

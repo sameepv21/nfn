@@ -210,11 +210,11 @@ def evaluate(nfnet, loader, orig_batch_siren, true_target, loss_type='l2'):
     nfnet.eval()
     loss = 0
     for wts_and_bs, img, _ in loader:
-        params = WeightSpaceFeatures(*wts_and_bs).to("cuda")
+        params = WeightSpaceFeatures(*wts_and_bs).to("cpu")
         if not true_target:
             img = orig_batch_siren(params_to_func_params(params))
         pred_img = nfnet(params)
-        batch_loss = compute_losses(img.cuda(), pred_img, loss_type)
+        batch_loss = compute_losses(img, pred_img, loss_type)
         loss += batch_loss
     nfnet.train(orig_state)
     return loss / len(loader)
@@ -234,7 +234,7 @@ def sample_recon(nfnet, loader, orig_batch_siren):
     orig_state = nfnet.training
     nfnet.eval()
     wts_and_bs, true_img, _ = next(iter(loader))
-    params = WeightSpaceFeatures(*wts_and_bs).to("cuda")
+    params = WeightSpaceFeatures(*wts_and_bs).to("cpu")
     params, true_img = params.map(lambda x: x[:32]), true_img[:32]
     orig_outs = orig_batch_siren(params_to_func_params(params))
     orig_outs = unprocess_img_arr(orig_outs.cpu().numpy())
@@ -284,7 +284,7 @@ def train_and_eval(cfg):
     valloader = DataLoader(valset, batch_size=cfg.bs, shuffle=False, num_workers=8, drop_last=True)
 
     spec = network_spec_from_wsfeat(WeightSpaceFeatures(*next(iter(trainloader))[0]).to("cpu"), set_all_dims=True)
-    nfnet: AutoEncoder = hydra.utils.instantiate(cfg.model, spec, valset.data_type).to("cuda")
+    nfnet: AutoEncoder = hydra.utils.instantiate(cfg.model, spec, valset.data_type).to("cpu")
     nfnet_fast = torch.compile(nfnet) if cfg.compile else nfnet
     if not cfg.debug and cfg.watch_grads: wandb.watch(nfnet_fast, log="gradients", log_freq=1000)
     orig_batch_siren = get_batch_siren(valset.data_type)[0]
@@ -308,7 +308,7 @@ def train_and_eval(cfg):
     outer_pbar = trange(start_step, cfg.total_steps, position=0)
     for step in outer_pbar:
         wts_and_bs, img, _ = next(train_iter)
-        params = WeightSpaceFeatures(*wts_and_bs).to("cuda")
+        params = WeightSpaceFeatures(*wts_and_bs).to("cpu")
         if not cfg.true_target:
             img = orig_batch_siren(params_to_func_params(params))
         if step == 0 and cfg.debug_compile:
@@ -318,7 +318,7 @@ def train_and_eval(cfg):
         amp_dtype = {"float16": torch.float16, "bfloat16": torch.bfloat16}[cfg.amp_dtype]
         with torch.amp.autocast("cuda", enabled=cfg.amp_enabled, dtype=amp_dtype):
             pred_img = nfnet_fast(params)
-            train_loss = compute_losses(img.cuda(), pred_img)
+            train_loss = compute_losses(img, pred_img)
         scaler.scale(train_loss).backward()
         scaler.unscale_(opt)
         if cfg.grad_clip is not None:

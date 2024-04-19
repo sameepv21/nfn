@@ -20,7 +20,7 @@ def main(args):
 
     # load weight features
     spec = network_spec_from_wsfeat(WeightSpaceFeatures(*next(iter(loader))[0]).to("cpu"), set_all_dims=True)
-    nfnet = hydra.utils.instantiate(cfg.model, spec, dset_data_type=dset.data_type, vae=False, compile=False).to("cuda")
+    nfnet = hydra.utils.instantiate(cfg.model, spec, dset_data_type=dset.data_type, vae=False, compile=False).to("cpu")
     nfnet.load_state_dict(torch.load(os.path.join(args.rundir, "best_nfnet.pt")))
 
     nfnet.eval()
@@ -34,7 +34,7 @@ def main(args):
         print("Computing embeddings...")
         embeddings, labels = [], []
         for wts_and_bs, _, label in tqdm(loader):
-            params = WeightSpaceFeatures(*wts_and_bs).to("cuda")
+            params = WeightSpaceFeatures(*wts_and_bs).to("cpu")
             with torch.no_grad():
                 embeddings.append(nfnet.encode(params).cpu())
                 labels.append(label)

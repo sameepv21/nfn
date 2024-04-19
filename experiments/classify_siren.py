@@ -25,10 +25,10 @@ def evaluate(nfnet, loader):
     labels, preds = [], []
     val_losses = []
     for wts_and_bs, label in pbar:
-        params = WeightSpaceFeatures(*wts_and_bs).to("cuda")
+        params = WeightSpaceFeatures(*wts_and_bs).to("cpu")
         with torch.no_grad():
             pred = nfnet(params)
-        loss = F.cross_entropy(pred, label.cuda())
+        loss = F.cross_entropy(pred, label)
         pbar.set_description(f"val loss={loss.item():.3f}")
         preds.append(torch.argmax(pred, -1).cpu().numpy())
         labels.append(label.numpy())
@@ -42,7 +42,7 @@ def evaluate(nfnet, loader):
 def train_step(nfnet, opt, params, label):
     opt.zero_grad(True)
     pred = nfnet(params)
-    loss = F.cross_entropy(pred, label.cuda())
+    loss = F.cross_entropy(pred, label)
     loss.backward()
     opt.step()
     return loss, pred
@@ -76,7 +76,7 @@ def main(cfg):
     if nfnet.normalize:
         nfnet.set_stats(compute_mean_std(trainloader, max_batches=(5_000 // cfg.batch_size) + 1))
     print(nfnet)
-    nfnet.cuda()
+    nfnet
     if cfg.compile: nfnet = torch.compile(nfnet)
     opt = hydra.utils.instantiate(cfg.opt, nfnet.parameters())
     sched = None
@@ -110,7 +110,7 @@ def main(cfg):
                 "wandb_run_id": wandb.run.id,
             }, ckpt_path)
         wts_and_bs, label = next(train_iter)
-        params = WeightSpaceFeatures(*wts_and_bs).to("cuda")
+        params = WeightSpaceFeatures(*wts_and_bs).to("cpu")
         loss, pred = train_step(nfnet, opt, params, label)
         if sched is not None:
             sched.step()

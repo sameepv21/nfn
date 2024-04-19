@@ -65,7 +65,7 @@ def evaluate(loader, model):
     model.eval()
     acc = 0
     for x, y in tqdm(loader, position=2, leave=False):
-        x, y = x.cuda(), y.cuda()
+        x, y = x, y
         logits = model(x)
         acc += (logits.argmax(dim=-1) == y).float().mean().item()
     model.train(state)
@@ -81,7 +81,7 @@ def mixup_data(x, y, alpha=1.0, use_cuda=True):
 
     batch_size = x.size()[0]
     if use_cuda:
-        index = torch.randperm(batch_size).cuda()
+        index = torch.randperm(batch_size)
     else:
         index = torch.randperm(batch_size)
 
@@ -107,7 +107,7 @@ def train_and_evaluate(
     for epoch_idx in outer_pbar:
         for x, y in tqdm(trainloader, position=1, leave=False):
             opt.zero_grad()
-            x, y = x.cuda(), y.cuda()
+            x, y = x, y
             x, y_a, y_b, lam = mixup_data(x, y, mixup_alpha)
             logits = clf(x)
             loss = lam * loss_fn(logits, y_a) + (1 - lam) * loss_fn(logits, y_b)
@@ -145,7 +145,7 @@ def main(cfg):
     # make dataset
     trainloader, valloader, testloader = make_dataset(embeddings, labels, split_points)
     # make model
-    clf = TransformerClassifier().cuda()
+    clf = TransformerClassifier()
     opt = torch.optim.AdamW(clf.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
     total_steps = len(trainloader) * cfg.n_epochs
     sched = get_linear_warmup_with_cos_decay(opt, total_steps=total_steps, warmup_steps=10_000)

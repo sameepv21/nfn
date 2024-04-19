@@ -22,7 +22,7 @@ def evaluate(nfnet, loader, loss_fn):
     pred, actual = [], []
     err, losses = [], []
     for wts_and_bs, acc in loader:
-        acc, params = acc.float().cuda(), WeightSpaceFeatures(*wts_and_bs).to("cuda")
+        acc, params = acc.float(), WeightSpaceFeatures(*wts_and_bs).to("cpu")
         pred_acc = nfnet(params).squeeze(-1)
         err.append(torch.abs(pred_acc - acc).mean().item())
         losses.append(loss_fn(pred_acc, acc).item())
@@ -53,7 +53,7 @@ def train(cfg):
     if nfnet.normalize:
         max_batches = 10 if cfg.debug else None
         nfnet.set_stats(compute_mean_std(trainloader, max_batches))
-    nfnet.cuda()
+    nfnet
     opt = torch.optim.Adam(nfnet.parameters(), lr=cfg.lr)
     sched = None
     if cfg.warmup_steps > 0:
@@ -65,7 +65,7 @@ def train(cfg):
     for epoch in range(cfg.epochs):
         nfnet.train()
         for wts_and_bs, acc in tqdm(trainloader):
-            acc, params = acc.float().cuda(), WeightSpaceFeatures(*wts_and_bs).to("cuda")
+            acc, params = acc.float(), WeightSpaceFeatures(*wts_and_bs).to("cpu")
             opt.zero_grad()
             pred_acc = nfnet(params).squeeze(-1)
             loss = loss_fn(pred_acc, acc)
