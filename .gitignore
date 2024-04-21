@@ -6,3 +6,4 @@ build/
 experiments/data
 outputs/
 wandb/
+.vscode

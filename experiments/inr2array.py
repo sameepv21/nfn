@@ -174,6 +174,15 @@ class AutoEncoder(nn.Module):
         return out
 
     def forward(self, x):
+        print("0th index weights", x.weights[0].shape)
+        print("1st index weights", x.weights[1].shape)
+        print("2nd index weights", x.weights[2].shape)
+
+        # print("Type of bias:", x.bias)
+
+        print("0th index bias", x.biases[0].shape)
+        print("1st index bias", x.biases[1].shape)
+        print("2nd index bias", x.biases[2].shape)
         if self.debug_compile:
             _, _, _, _, _, explanation_verbose = dynamo.explain(self._forward_helper, x)
             print(explanation_verbose)
