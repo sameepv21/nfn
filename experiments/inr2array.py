@@ -7,6 +7,7 @@ import torch
 from torch import nn
 import torch._dynamo as dynamo
 import torch.nn.functional as F
+from torch.nn import TransformerEncoderLayer, TransformerEncoder
 from torch.utils.data import DataLoader, ConcatDataset
 from einops.layers.torch import Reduce, Rearrange
 from tqdm import trange
@@ -112,6 +113,7 @@ DEC_TYPES = {"sitzmann": HyperNetwork, "simple": SimpleHyperNetwork}
 class AutoEncoder(nn.Module):
     def __init__(
         self, network_spec: NetworkSpec, dset_data_type,
+        d_model, nhead, num_layers,
         block_type="nft", pool_cls=PerceiverPooling,
         num_blocks=3, spatial=False,
         compile=False,
@@ -123,12 +125,22 @@ class AutoEncoder(nn.Module):
         **block_kwargs,
     ):
         super().__init__()
+
+        self.d_model = d_model
+        self.nhead = nhead
+        self.num_layers = num_layers
+
         self.network_spec = network_spec
         self.spatial = spatial
         self.compile, self.debug_compile = compile, debug_compile
         n_chan = 2 * enc_map_size
+
+        self.encoder_layer = TransformerEncoderLayer(d_model = self.d_model, nhead = self.nhead)
+        # self.encoder = TransformerEncoder(encoder_layer = self.encoder_layer, num_layers = self.num_layers)
+
         self.encoder = nn.Sequential(
-            GaussianFourierFeatureTransform(network_spec, 1, mapping_size=enc_map_size, scale=enc_scale),
+            # GaussianFourierFeatureTransform(network_spec, 1, mapping_size=enc_map_size, scale=enc_scale),
+            TransformerEncoder(encoder_layer = self.encoder_layer, num_layers = self.num_layers, enable_nested_tensor=False),
             LearnedPosEmbedding(network_spec, n_chan),
             *[BLOCK_TYPES[block_type](network_spec, n_chan, **block_kwargs) for _ in range(num_blocks)],
             pool_cls(network_spec, n_chan, reduce=not spatial),
@@ -174,15 +186,6 @@ class AutoEncoder(nn.Module):
         return out
 
     def forward(self, x):
-        print("0th index weights", x.weights[0].shape)
-        print("1st index weights", x.weights[1].shape)
-        print("2nd index weights", x.weights[2].shape)
-
-        # print("Type of bias:", x.bias)
-
-        print("0th index bias", x.biases[0].shape)
-        print("1st index bias", x.biases[1].shape)
-        print("2nd index bias", x.biases[2].shape)
         if self.debug_compile:
             _, _, _, _, _, explanation_verbose = dynamo.explain(self._forward_helper, x)
             print(explanation_verbose)

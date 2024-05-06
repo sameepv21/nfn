@@ -44,6 +44,10 @@ class WeightSpaceFeatures(collections.abc.Sequence):
         if isinstance(biases, list): biases = tuple(biases)
         self.weights = weights
         self.biases = biases
+        self.dtype = type(self.weights)
+
+    def dim(self):
+        return len(self.weights)
 
     def __len__(self):
         return len(self.weights)
