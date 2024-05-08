@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Tuple
 import collections
 from collections import OrderedDict
-
+import torch
 
 @dataclass(frozen=True)
 class ArraySpec:
@@ -44,10 +44,6 @@ class WeightSpaceFeatures(collections.abc.Sequence):
         if isinstance(biases, list): biases = tuple(biases)
         self.weights = weights
         self.biases = biases
-        self.dtype = type(self.weights)
-
-    def dim(self):
-        return len(self.weights)
 
     def __len__(self):
         return len(self.weights)

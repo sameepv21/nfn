@@ -7,12 +7,12 @@ import torch
 from torch import nn
 import torch._dynamo as dynamo
 import torch.nn.functional as F
-from torch.nn import TransformerEncoderLayer, TransformerEncoder
 from torch.utils.data import DataLoader, ConcatDataset
 from einops.layers.torch import Reduce, Rearrange
 from tqdm import trange
 import hydra
 from nfn.layers import LearnedPosEmbedding, ResBlock, NPLinear, HNPLinear, TupleOp, TupleOp, NPPool
+from nfn.layers.encoding import TransformerEncoder
 from nfn.layers import GaussianFourierFeatureTransform, SimpleLayerNorm, FlattenWeights, UnflattenWeights
 from nfn.common import network_spec_from_wsfeat, WeightSpaceFeatures, NetworkSpec, params_to_func_params
 from experiments.data_utils import cycle, SirenAndOriginalDataset, AlignedSampler
@@ -113,7 +113,6 @@ DEC_TYPES = {"sitzmann": HyperNetwork, "simple": SimpleHyperNetwork}
 class AutoEncoder(nn.Module):
     def __init__(
         self, network_spec: NetworkSpec, dset_data_type,
-        d_model, nhead, num_layers,
         block_type="nft", pool_cls=PerceiverPooling,
         num_blocks=3, spatial=False,
         compile=False,
@@ -125,22 +124,13 @@ class AutoEncoder(nn.Module):
         **block_kwargs,
     ):
         super().__init__()
-
-        self.d_model = d_model
-        self.nhead = nhead
-        self.num_layers = num_layers
-
         self.network_spec = network_spec
         self.spatial = spatial
         self.compile, self.debug_compile = compile, debug_compile
         n_chan = 2 * enc_map_size
-
-        self.encoder_layer = TransformerEncoderLayer(d_model = self.d_model, nhead = self.nhead)
-        # self.encoder = TransformerEncoder(encoder_layer = self.encoder_layer, num_layers = self.num_layers)
-
         self.encoder = nn.Sequential(
-            # GaussianFourierFeatureTransform(network_spec, 1, mapping_size=enc_map_size, scale=enc_scale),
-            TransformerEncoder(encoder_layer = self.encoder_layer, num_layers = self.num_layers, enable_nested_tensor=False),
+            # TransformerEncoder(network_spec=network_spec, hidden_size=256, num_layers=6, num_heads=8, dropout=0.1),
+            GaussianFourierFeatureTransform(network_spec, 1, mapping_size=enc_map_size, scale=enc_scale),
             LearnedPosEmbedding(network_spec, n_chan),
             *[BLOCK_TYPES[block_type](network_spec, n_chan, **block_kwargs) for _ in range(num_blocks)],
             pool_cls(network_spec, n_chan, reduce=not spatial),
@@ -173,6 +163,25 @@ class AutoEncoder(nn.Module):
 
     def _forward_helper(self, x):
         """Functorch prevents compiling the entire forward method, but this helper can be compiled."""
+        # # Convert wts and bias to list
+        # x.weights = list(x.weights)
+        # x.biases = list(x.biases)
+
+        # # Squeeze dimension
+        # for i in range(len(x.weights)):
+        #     x.weights[i] = torch.squeeze(x.weights[i])
+        #     x.biases[i] = torch.squeeze(x.biases[i])
+
+        # x.weights = tuple(x.weights)
+        # x.biases = tuple(x.biases)
+
+        # shape_weights_0 = x.weights[0].shape
+        # shape_weights_1 = x.weights[1].shape
+        # shape_weights_2 = x.weights[2].shape
+        # shape_biases_0 = x.biases[0].shape
+        # shape_biases_1 = x.biases[1].shape
+        # shape_biases_2 = x.biases[2].shape
+
         z = self.encoder(x)
         if self.spatial:
             bs, num_latents = z.shape[:2]
@@ -280,6 +289,8 @@ def train_and_eval(cfg):
         if prev_ckpt is None:
             cfg_dict = OmegaConf.to_container(cfg, resolve=True)
             wandb.config.update(cfg_dict)
+    # This SirenAndOriginalDataset contains a call to SirenDataset class which gets the weights and biases from the siren dataset (inside data folder)
+    # The dataset contains pre-trained weights and biases based on the index number splitted.
     trainset: SirenAndOriginalDataset = hydra.utils.instantiate(cfg.dset, split="train")
     valset: SirenAndOriginalDataset = hydra.utils.instantiate(cfg.dset, split="val")
     if cfg.extra_aug > 0:
@@ -294,6 +305,7 @@ def train_and_eval(cfg):
         sampler = AlignedSampler(trainset, len(trainset) // (cfg.extra_aug + 1))
     trainloader = DataLoader(trainset, batch_size=cfg.bs, shuffle=sampler is None, num_workers=8, drop_last=True, sampler=sampler)
     valloader = DataLoader(valset, batch_size=cfg.bs, shuffle=False, num_workers=8, drop_last=True)
+
 
     spec = network_spec_from_wsfeat(WeightSpaceFeatures(*next(iter(trainloader))[0]).to("cpu"), set_all_dims=True)
     nfnet: AutoEncoder = hydra.utils.instantiate(cfg.model, spec, valset.data_type).to("cpu")
@@ -320,6 +332,7 @@ def train_and_eval(cfg):
     outer_pbar = trange(start_step, cfg.total_steps, position=0)
     for step in outer_pbar:
         wts_and_bs, img, _ = next(train_iter)
+
         params = WeightSpaceFeatures(*wts_and_bs).to("cpu")
         if not cfg.true_target:
             img = orig_batch_siren(params_to_func_params(params))
@@ -328,6 +341,11 @@ def train_and_eval(cfg):
             print(explanation_verbose)
         opt.zero_grad()
         amp_dtype = {"float16": torch.float16, "bfloat16": torch.bfloat16}[cfg.amp_dtype]
+        # weights = params.weights
+        # bias = params.biases
+
+        # weight_shape = weights[0].shape
+        # bias_shape = bias[0].shape
         with torch.amp.autocast("cuda", enabled=cfg.amp_enabled, dtype=amp_dtype):
             pred_img = nfnet_fast(params)
             train_loss = compute_losses(img, pred_img)

@@ -2,9 +2,6 @@ defaults:
   - pool_cls: crossattn_4x4
 
 _target_: experiments.inr2array.AutoEncoder
-d_model: 512
-nhead: 8
-num_layers: 6
 block_type: nft
 num_blocks: 6
 spatial: true

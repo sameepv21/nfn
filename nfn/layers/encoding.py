@@ -3,7 +3,105 @@ import torch
 from torch import nn
 from einops.layers.torch import Rearrange
 from nfn.common import WeightSpaceFeatures, NetworkSpec
+import math
 
+class TransformerEncoder(nn.Module):
+    """
+    Transformer Encoder module for encoding weights and biases.
+    """
+
+    def __init__(self, network_spec, hidden_size, channels, num_layers=6, num_heads=8, dropout=0.1):
+        super(TransformerEncoder, self).__init__()
+        self.network_spec = network_spec
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+        self.dropout = dropout
+
+        # Calculate input size based on network_spec
+        self.input_size, _ = network_spec.get_io()
+
+        # Define layers
+        self.pos_encoder = PositionalEncoding(d_model=channels, dropout=dropout, max_len=64)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=channels, nhead=num_heads)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.linear = nn.Linear(self.input_size, hidden_size)
+
+    def _calculate_input_size(self, network_spec):
+        # Calculate input size based on the number of input channels in the network specification
+        input_size = sum(network_spec)
+        return input_size
+
+    def forward(self, wsfeat):
+        """
+        Forward pass of the encoder.
+        
+        Args:
+        - wsfeat (WeightSpaceFeatures): Input WeightSpaceFeatures object containing weights and biases.
+
+        Returns:
+        - encoded_wsfeat (WeightSpaceFeatures): Encoded WeightSpaceFeatures object.
+        """
+        out_weights, out_bias = [], []
+        for i in range(len(self.network_spec)):
+            # Fetch weights and biases
+            weight, bias = wsfeat[i]
+
+            # Encode weights
+            encoded_weights = self._encode_tensor(weight)
+            
+            # Encode biases
+            encoded_bias = self._encode_tensor(bias)
+
+            # Append in the list
+            out_weights.append(encoded_weights)
+            out_bias.append(encoded_bias)
+        return WeightSpaceFeatures(out_weights, out_bias)
+
+    def _encode_tensor(self, tensor):
+        # Perform positional encoding
+        tensor = self.pos_encoder(tensor)
+        # Apply transformer encoder
+        encoded_tensor = self.transformer_encoder(tensor)
+        # Linear projection
+        mean = encoded_tensor.mean(dim = -1)
+        shape_mean = mean.shape
+
+        encoded_tensor = self.linear(encoded_tensor.mean(dim=-1))  # Pooling over sequence dimension
+        return encoded_tensor
+
+class PositionalEncoding(nn.Module):
+    """
+    Positional encoding for transformer input.
+    """
+
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        # Compute positional encodings in advance
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)Container(
+            child: 
+        )
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        """
+        Forward pass of positional encoding.
+
+        Args:
+        - x (torch.Tensor): Input tensor of shape (seq_len, batch_size, d_model).
+
+        Returns:
+        - x (torch.Tensor): Output tensor of shape (seq_len, batch_size, d_model) with positional encodings added.
+        """
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)
 
 class GaussianFourierFeatureTransform(nn.Module):
     """
@@ -109,6 +207,7 @@ class LearnedPosEmbedding(nn.Module):
         super().__init__()
         self.channels = channels
         self.network_spec = network_spec
+        length = len(network_spec)
         self.weight_emb = nn.Embedding(len(network_spec), channels)
         self.bias_emb = nn.Embedding(len(network_spec), channels)
         num_inp, num_out = network_spec.get_io()
