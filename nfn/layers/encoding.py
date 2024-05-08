@@ -60,7 +60,7 @@ class TransformerEncoder(nn.Module):
 
     def _encode_tensor(self, tensor):
         # Perform positional encoding
-        tensor = self.pos_encoder(tensor)
+        # tensor = self.pos_encoder(tensor)
         # Apply transformer encoder
         encoded_tensor = self.transformer_encoder(tensor)
         # Linear projection
@@ -83,8 +83,8 @@ class PositionalEncoding(nn.Module):
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0, 0::2] = torch.sin(position * div_term)
-        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0).transpose(0, 1)
         self.register_buffer('pe', pe)
 
@@ -98,6 +98,9 @@ class PositionalEncoding(nn.Module):
         Returns:
         - x (torch.Tensor): Output tensor of shape (seq_len, batch_size, d_model) with positional encodings added.
         """
+        # Reshape the input according to the requirements
+        # x = x.reshape(2, 64, 256)
+
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
 
