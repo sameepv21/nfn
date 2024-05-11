@@ -1,6 +1,6 @@
 import math
 import torch
-from torch import nn
+from torch import nn, Tensor
 from einops.layers.torch import Rearrange
 from nfn.common import WeightSpaceFeatures, NetworkSpec
 import math
@@ -16,16 +16,17 @@ class TransformerEncoder(nn.Module):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.num_heads = num_heads
+        self.channels = channels
         self.dropout = dropout
 
         # Calculate input size based on network_spec
         self.input_size, _ = network_spec.get_io()
 
         # Define layers
-        self.pos_encoder = PositionalEncoding(d_model=channels, dropout=dropout, max_len=64)
+        self.pos_encoder = PositionalEncoding(d_model=channels, dropout=dropout, max_len=1024)
         encoder_layer = nn.TransformerEncoderLayer(d_model=channels, nhead=num_heads)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.linear = nn.Linear(self.input_size, hidden_size)
+        self.linear = nn.Linear(128, hidden_size)
 
     def _calculate_input_size(self, network_spec):
         # Calculate input size based on the number of input channels in the network specification
@@ -47,6 +48,10 @@ class TransformerEncoder(nn.Module):
             # Fetch weights and biases
             weight, bias = wsfeat[i]
 
+            # Preprocess and get the corrected shape
+            weight = self._correct_dim(weight, index = i, is_weight = True)
+            bias = self._correct_dim(bias, index = i, is_weight = False)
+
             # Encode weights
             encoded_weights = self._encode_tensor(weight)
             
@@ -58,9 +63,33 @@ class TransformerEncoder(nn.Module):
             out_bias.append(encoded_bias)
         return WeightSpaceFeatures(out_weights, out_bias)
 
+    def _correct_dim(self, x, index, is_weight):
+        # conv weight filter dims.
+        filter_dims = (None,) * (x.ndim - 4)
+
+        # Defing embedding look ups for weights and biases
+        weight_emb = nn.Embedding(len(self.network_spec), self.channels)
+        bias_emb = nn.Embedding(len(self.network_spec), self.channels)
+        
+        # Define post-rearrange term for weights and bias
+        weight_emb_rearrange = Rearrange("bs embed_dim out_neuron curr_neuron -> (out_neuron curr_neuron) bs embed_dim")
+        bias_emb_rearrange = Rearrange("bs embed_dim curr_neuron -> curr_neuron bs embed_dim")
+        
+        # If weight is being managed
+        if is_weight:
+            x = x + weight_emb.weight[index][(None, Ellipsis, None, None, *filter_dims)]
+            returned_weight = weight_emb_rearrange(x)
+            return weight_emb_rearrange(x)
+        
+        x = x + bias_emb.weight[index][None, :, None]
+        returned_bias = bias_emb_rearrange(x)
+        return bias_emb_rearrange(x)
+
     def _encode_tensor(self, tensor):
         # Perform positional encoding
-        # tensor = self.pos_encoder(tensor)
+        shape_tensor = tensor.shape
+
+        tensor = self.pos_encoder(tensor)
         # Apply transformer encoder
         encoded_tensor = self.transformer_encoder(tensor)
         # Linear projection
@@ -71,37 +100,24 @@ class TransformerEncoder(nn.Module):
         return encoded_tensor
 
 class PositionalEncoding(nn.Module):
-    """
-    Positional encoding for transformer input.
-    """
 
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
-        super(PositionalEncoding, self).__init__()
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
-        # Compute positional encodings in advance
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         """
-        Forward pass of positional encoding.
-
-        Args:
-        - x (torch.Tensor): Input tensor of shape (seq_len, batch_size, d_model).
-
-        Returns:
-        - x (torch.Tensor): Output tensor of shape (seq_len, batch_size, d_model) with positional encodings added.
+        Arguments:
+            x: Tensor, shape ``[seq_len, batch_size, embedding_dim]``
         """
-        # Reshape the input according to the requirements
-        # x = x.reshape(2, 64, 256)
-
-        x = x + self.pe[:x.size(0), :]
+        x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 
 class GaussianFourierFeatureTransform(nn.Module):
@@ -223,6 +239,7 @@ class LearnedPosEmbedding(nn.Module):
         for i in range(len(self.network_spec)):
             weight, bias = wsfeat[i]
             filter_dims = (None,) * (weight.ndim - 4)  # conv weight filter dims.
+            temp = self.weight_emb.weight[i][(None, Ellipsis, None, None, *filter_dims)]
             weight = weight + self.weight_emb.weight[i][(None, Ellipsis, None, None, *filter_dims)]
             bias = bias + self.bias_emb.weight[i][None, :, None]
             if i == 0:
@@ -233,6 +250,5 @@ class LearnedPosEmbedding(nn.Module):
             out_weights.append(weight)
             out_biases.append(bias)
         return WeightSpaceFeatures(tuple(out_weights), tuple(out_biases))
-
     def __repr__(self):
         return f"LearnedPosEmbedding(channels={self.channels})"

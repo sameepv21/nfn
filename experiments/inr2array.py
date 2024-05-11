@@ -131,7 +131,7 @@ class AutoEncoder(nn.Module):
         self.encoder = nn.Sequential(
             TransformerEncoder(network_spec=network_spec, channels=n_chan, hidden_size=256, num_layers=6, num_heads=8, dropout=0.1),
             # GaussianFourierFeatureTransform(network_spec, 1, mapping_size=enc_map_size, scale=enc_scale),
-            LearnedPosEmbedding(network_spec, n_chan),
+            # LearnedPosEmbedding(network_spec, n_chan),
             *[BLOCK_TYPES[block_type](network_spec, n_chan, **block_kwargs) for _ in range(num_blocks)],
             pool_cls(network_spec, n_chan, reduce=not spatial),
         )

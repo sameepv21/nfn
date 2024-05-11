@@ -4,7 +4,7 @@ defaults:
   - _self_
 
 seed: null
-bs: 64
+bs: 128
 total_steps: 200_000
 warmup_steps: 10_000
 decay_start: null  # when to start decaying learning rate. if none, start at warmup_steps
