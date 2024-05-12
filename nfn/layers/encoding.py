@@ -48,6 +48,9 @@ class TransformerEncoder(nn.Module):
             # Fetch weights and biases
             weight, bias = wsfeat[i]
 
+            # Calculate bs based on shape
+            self.bs = weight.shape[0]
+
             # Preprocess and get the corrected shape
             weight = self._correct_dim(weight, index = i, is_weight = True)
             bias = self._correct_dim(bias, index = i, is_weight = False)
@@ -62,10 +65,10 @@ class TransformerEncoder(nn.Module):
             final_weight_rearrange = Rearrange("h w bs embed_dim -> bs embed_dim h w")
             final_bias_rearrange = Rearrange("h bs embed_dim -> bs embed_dim h")
 
-            encoded_weights = torch.reshape(encoded_weights, (self.network_spec.weight_spec[i].shape[0], self.network_spec.weight_spec[i].shape[1], 4, 256))
+            encoded_weights = torch.reshape(encoded_weights, (self.network_spec.weight_spec[i].shape[0], self.network_spec.weight_spec[i].shape[1], self.bs, self.channels))
             encoded_weights = final_weight_rearrange(encoded_weights)
 
-            encoded_bias = torch.reshape(encoded_bias, (self.network_spec.bias_spec[i].shape[0], 4, 256))
+            encoded_bias = torch.reshape(encoded_bias, (self.network_spec.bias_spec[i].shape[0], self.bs, self.channels))
             encoded_bias = final_bias_rearrange(encoded_bias)
 
             # encoded_weights = final_rearrange(encoded_weights)
