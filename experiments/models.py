@@ -377,6 +377,7 @@ class Block(nn.Module):
         ablate_diagonalterm=False,
     ):
         super().__init__()
+        # self.network_spec = network_spec
         self.ln1 = SimpleLayerNorm(network_spec, channels)
         self.ln2 = SimpleLayerNorm(network_spec, channels)
         self.attn = NPAttention(
@@ -397,5 +398,6 @@ class Block(nn.Module):
         )
 
     def forward(self, x):
+        # x = torch.reshape(x, (4, 256, self.network_spec.weight_s))
         x = x + self.drop(self.attn(self.ln1(x)))
         return x + self.ff(self.ln2(x))

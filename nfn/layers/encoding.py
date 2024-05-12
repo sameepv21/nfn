@@ -26,7 +26,7 @@ class TransformerEncoder(nn.Module):
         self.pos_encoder = PositionalEncoding(d_model=channels, dropout=dropout, max_len=1024)
         encoder_layer = nn.TransformerEncoderLayer(d_model=channels, nhead=num_heads)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.linear = nn.Linear(128, hidden_size)
+        self.linear = nn.Linear(channels, hidden_size)
 
     def _calculate_input_size(self, network_spec):
         # Calculate input size based on the number of input channels in the network specification
@@ -58,6 +58,19 @@ class TransformerEncoder(nn.Module):
             # Encode biases
             encoded_bias = self._encode_tensor(bias)
 
+            # Correct and rearrange the encoded weights and bias
+            final_weight_rearrange = Rearrange("h w bs embed_dim -> bs embed_dim h w")
+            final_bias_rearrange = Rearrange("h bs embed_dim -> bs embed_dim h")
+
+            encoded_weights = torch.reshape(encoded_weights, (self.network_spec.weight_spec[i].shape[0], self.network_spec.weight_spec[i].shape[1], 4, 256))
+            encoded_weights = final_weight_rearrange(encoded_weights)
+
+            encoded_bias = torch.reshape(encoded_bias, (self.network_spec.bias_spec[i].shape[0], 4, 256))
+            encoded_bias = final_bias_rearrange(encoded_bias)
+
+            # encoded_weights = final_rearrange(encoded_weights)
+            # encoded_bias = final_rearrange(encoded_bias)
+
             # Append in the list
             out_weights.append(encoded_weights)
             out_bias.append(encoded_bias)
@@ -78,7 +91,7 @@ class TransformerEncoder(nn.Module):
         # If weight is being managed
         if is_weight:
             x = x + weight_emb.weight[index][(None, Ellipsis, None, None, *filter_dims)]
-            returned_weight = weight_emb_rearrange(x)
+            # returned_weight = weight_emb_rearrange(x)
             return weight_emb_rearrange(x)
         
         x = x + bias_emb.weight[index][None, :, None]
@@ -87,16 +100,11 @@ class TransformerEncoder(nn.Module):
 
     def _encode_tensor(self, tensor):
         # Perform positional encoding
-        shape_tensor = tensor.shape
-
         tensor = self.pos_encoder(tensor)
         # Apply transformer encoder
         encoded_tensor = self.transformer_encoder(tensor)
         # Linear projection
-        mean = encoded_tensor.mean(dim = -1)
-        shape_mean = mean.shape
-
-        encoded_tensor = self.linear(encoded_tensor.mean(dim=-1))  # Pooling over sequence dimension
+        encoded_tensor = self.linear(encoded_tensor)  # Pooling over sequence dimension
         return encoded_tensor
 
 class PositionalEncoding(nn.Module):
